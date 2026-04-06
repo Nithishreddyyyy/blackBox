@@ -1,0 +1,33 @@
+# FastAPI & Server
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+
+# Database
+sqlalchemy==2.0.36
+pymysql==1.1.1
+cryptography==44.0.0
+alembic==1.14.1
+
+# Authentication
+passlib[bcrypt]==1.7.4
+bcrypt==4.2.1
+python-jose[cryptography]==3.3.0
+
+# LLM Providers
+openai==1.58.1
+httpx==0.28.1
+
+# WebSockets (included with uvicorn[standard])
+websockets==14.1
+
+# Utilities
+python-dotenv==1.0.1
+pydantic[email]==2.10.4
+pydantic-settings==2.7.1
+
+# CORS
+# (included in fastapi)
+
+# Rate Limiting
+slowapi==0.1.9
