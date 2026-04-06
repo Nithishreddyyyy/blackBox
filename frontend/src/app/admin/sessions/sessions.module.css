@@ -1,0 +1,55 @@
+.createForm {
+  margin-bottom: 20px;
+}
+
+.createRow {
+  display: flex;
+  gap: 8px;
+}
+
+.sessionList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sessionCard {
+  padding: 16px 20px;
+}
+
+.sessionRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.sessionInfo {
+  flex: 1;
+  min-width: 200px;
+}
+
+.sessionName {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.sessionMeta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.sessionActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.participantsPanel {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--bg-tertiary);
+}
