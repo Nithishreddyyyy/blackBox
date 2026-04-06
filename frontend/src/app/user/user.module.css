@@ -25,6 +25,33 @@
   font-size: 16px;
   font-weight: 700;
   letter-spacing: -0.02em;
+  margin-right: 16px;
+}
+
+.topNav {
+  display: flex;
+  gap: 4px;
+}
+
+.topNavLink {
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-decoration: none;
+  border-radius: var(--radius);
+  transition: all 0.12s ease;
+}
+
+.topNavLink:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.topNavLinkActive {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
 .topbarRight {
