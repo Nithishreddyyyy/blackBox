@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRequireAuth } from "@/lib/auth";
 import { apiFetch } from "@/lib/api";
-import styles from "./notifications.module.css";
 
 interface Notification {
   id: number;

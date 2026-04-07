@@ -56,19 +56,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // On mount, try to restore session from localStorage
   useEffect(() => {
+    let cancelled = false;
     const stored = getToken();
-    if (stored) {
-      setTokenState(stored);
-      getMe()
-        .then((u) => setUser(u))
-        .catch(() => {
-          clearToken();
-          setTokenState(null);
-        })
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
+    if (!stored) {
+      queueMicrotask(() => {
+        if (!cancelled) setLoading(false);
+      });
+      return () => {
+        cancelled = true;
+      };
     }
+
+    Promise.resolve()
+      .then(() => getMe())
+      .then((u) => {
+        if (!cancelled) {
+          setTokenState(stored);
+          setUser(u);
+        }
+      })
+      .catch(() => {
+        clearToken();
+        if (!cancelled) setTokenState(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const login = useCallback(

@@ -2,7 +2,17 @@
  * Centralized API client for the BlackBox backend (FastAPI on port 8000).
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
+export const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+export function getWebSocketUrl(path: string, token?: string | null) {
+  const url = new URL(path, API_BASE);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  if (token) {
+    url.searchParams.set("token", token);
+  }
+  return url.toString();
+}
 
 // ---------------------------------------------------------------------------
 // Token helpers

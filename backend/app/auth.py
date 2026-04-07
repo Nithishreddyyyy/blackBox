@@ -8,12 +8,21 @@ from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
+import bcrypt
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session as DBSession
 
 from app.config import settings
 from app.database import get_db
 from app.models import User
+
+# Passlib 1.7.x still checks bcrypt.__about__.__version__, which bcrypt 4.1+
+# removed. Supplying the metadata keeps startup logs clean without changing hash behavior.
+if not hasattr(bcrypt, "__about__"):
+    class _BcryptAbout:
+        __version__ = bcrypt.__version__
+
+    bcrypt.__about__ = _BcryptAbout()
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")

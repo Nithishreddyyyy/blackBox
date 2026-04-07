@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import { useRequireAuth, useAuth } from "@/lib/auth";
-import { apiFetch, getToken } from "@/lib/api";
-import styles from "./user.module.css";
+import { useRequireAuth } from "@/lib/auth";
+import { apiFetch, getToken, getWebSocketUrl } from "@/lib/api";
 import chatStyles from "./chat.module.css";
 
 // ── Types ────────────────────────────────────────────────
@@ -44,7 +43,6 @@ interface Notification {
 
 export default function UserChatPage() {
   const { user, loading: authLoading } = useRequireAuth("user");
-  const { logout } = useAuth();
 
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSession, setActiveSession] = useState<Session | null>(null);
@@ -124,7 +122,7 @@ export default function UserChatPage() {
     if (authLoading || !user) return;
 
     const token = getToken();
-    const wsUrl = `ws://localhost:8000/ws${token ? `?token=${token}` : ""}`;
+    const wsUrl = getWebSocketUrl("/ws", token);
 
     let ws: WebSocket;
     let reconnectTimer: NodeJS.Timeout;

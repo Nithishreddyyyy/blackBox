@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import styles from "./login.module.css";
@@ -15,10 +15,13 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
 
   // If already logged in, redirect
-  if (!loading && user) {
-    router.replace(user.role === "admin" ? "/admin" : "/user");
-    return null;
-  }
+  useEffect(() => {
+    if (!loading && user) {
+      router.replace(user.role === "admin" ? "/admin" : "/user");
+    }
+  }, [loading, router, user]);
+
+  if (!loading && user) return null;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
