@@ -2,7 +2,7 @@
  * Centralized API client for the BlackBox backend (FastAPI on port 8000).
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
 
 // ---------------------------------------------------------------------------
 // Token helpers
