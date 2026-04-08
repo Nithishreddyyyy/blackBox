@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useRequireAuth } from "@/lib/auth";
-import { apiFetch, getToken, getWebSocketUrl } from "@/lib/api";
+import { apiFetch, getWebSocketUrl } from "@/lib/api";
 import chatStyles from "./chat.module.css";
 
 // ── Types ────────────────────────────────────────────────
@@ -121,8 +121,7 @@ export default function UserChatPage() {
   useEffect(() => {
     if (authLoading || !user) return;
 
-    const token = getToken();
-    const wsUrl = getWebSocketUrl("/ws", token);
+    const wsUrl = getWebSocketUrl("/ws");
 
     let ws: WebSocket;
     let reconnectTimer: NodeJS.Timeout;

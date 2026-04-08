@@ -2,7 +2,7 @@
 WebSocket endpoint for real-time communication.
 """
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from jose import JWTError, jwt
 
 from app.config import settings
@@ -14,12 +14,11 @@ router = APIRouter(tags=["WebSocket"])
 @router.websocket("/ws")
 async def websocket_endpoint(
     websocket: WebSocket,
-    token: str = Query(default=None),
 ):
     """
     WebSocket connection for real-time notifications.
 
-    Connect with: ws://host/ws?token=<jwt_token>
+    Connect with: ws://host/ws
     
     Messages received by clients:
       - {"type": "notification", "message": "...", "priority": "...", ...}
@@ -28,14 +27,17 @@ async def websocket_endpoint(
     """
     user_id = None
 
-    # Try to authenticate via token
+    # Try to authenticate via the access token cookie
+    token = websocket.cookies.get(settings.ACCESS_TOKEN_COOKIE_NAME)
     if token:
         try:
             payload = jwt.decode(
                 token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
             )
-            user_id = payload.get("sub")
-        except JWTError:
+            sub = payload.get("sub")
+            if sub is not None:
+                user_id = int(sub)
+        except (JWTError, TypeError, ValueError):
             pass  # Allow anonymous connections for public displays
 
     await ws_manager.connect(websocket, user_id)

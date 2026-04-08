@@ -5,64 +5,38 @@
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-export function getWebSocketUrl(path: string, token?: string | null) {
+export function getWebSocketUrl(path: string) {
   const url = new URL(path, API_BASE);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  if (token) {
-    url.searchParams.set("token", token);
-  }
   return url.toString();
-}
-
-// ---------------------------------------------------------------------------
-// Token helpers
-// ---------------------------------------------------------------------------
-
-export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("bb_token");
-}
-
-export function setToken(token: string) {
-  localStorage.setItem("bb_token", token);
-}
-
-export function clearToken() {
-  localStorage.removeItem("bb_token");
 }
 
 // ---------------------------------------------------------------------------
 // Generic fetch wrapper
 // ---------------------------------------------------------------------------
 
-interface FetchOptions extends RequestInit {
-  /** Skip adding the Authorization header */
-  noAuth?: boolean;
-}
+type FetchOptions = RequestInit;
 
 export async function apiFetch<T = unknown>(
   path: string,
   opts: FetchOptions = {}
 ): Promise<T> {
-  const { noAuth, headers: extraHeaders, ...rest } = opts;
+  const { headers: extraHeaders, ...rest } = opts;
 
   const headers: Record<string, string> = {
     ...(extraHeaders as Record<string, string>),
   };
-
-  if (!noAuth) {
-    const token = getToken();
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
-  }
 
   // Don't set Content-Type for FormData (browser sets boundary automatically)
   if (!(rest.body instanceof FormData) && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
   }
 
-  const res = await fetch(`${API_BASE}${path}`, { headers, ...rest });
+  const res = await fetch(`${API_BASE}${path}`, {
+    credentials: "include",
+    headers,
+    ...rest,
+  });
 
   if (!res.ok) {
     let detail = res.statusText;
@@ -85,9 +59,7 @@ export async function apiFetch<T = unknown>(
 // Auth APIs
 // ---------------------------------------------------------------------------
 
-export interface TokenResponse {
-  access_token: string;
-  token_type: string;
+export interface LoginResponse {
   role: string;
   user_id: number;
   name: string;
@@ -108,21 +80,19 @@ export interface UserOut {
 export async function login(
   email: string,
   password: string
-): Promise<TokenResponse> {
+): Promise<LoginResponse> {
   const form = new FormData();
   form.append("username", email);
   form.append("password", password);
 
-  return apiFetch<TokenResponse>("/auth/login", {
+  return apiFetch<LoginResponse>("/auth/login", {
     method: "POST",
     body: form,
-    noAuth: true,
   });
 }
 
 export async function logout(): Promise<void> {
   await apiFetch("/auth/logout", { method: "POST" });
-  clearToken();
 }
 
 export async function getMe(): Promise<UserOut> {

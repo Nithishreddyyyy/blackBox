@@ -5,8 +5,7 @@ JWT & password hashing utilities.
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import Depends, HTTPException, Request, status
 from jose import JWTError, jwt
 import bcrypt
 from passlib.context import CryptContext
@@ -25,7 +24,6 @@ if not hasattr(bcrypt, "__about__"):
     bcrypt.__about__ = _BcryptAbout()
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
 # ── Password helpers ─────────────────────────────────────
@@ -60,14 +58,20 @@ def decode_token(token: str) -> dict:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"},
         )
 
 
 # ── FastAPI dependencies ─────────────────────────────────
 
+def get_token(request: Request) -> str:
+    token = request.cookies.get(settings.ACCESS_TOKEN_COOKIE_NAME)
+    if token:
+        return token
+    raise HTTPException(status_code=401, detail="Not authenticated")
+
+
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    token: str = Depends(get_token),
     db: DBSession = Depends(get_db),
 ) -> User:
     payload = decode_token(token)

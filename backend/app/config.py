@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     # ── JWT ──────────────────────────────────────────────
     SECRET_KEY: str = "change-me-to-a-random-secret-key-in-production"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 120
+    ACCESS_TOKEN_COOKIE_NAME: str = "access_token"
+    COOKIE_SECURE: bool = False
+    COOKIE_SAMESITE: str = "lax"
     ALGORITHM: str = "HS256"
 
     # ── LLM Provider ────────────────────────────────────
