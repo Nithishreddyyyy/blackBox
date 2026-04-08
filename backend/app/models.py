@@ -1,5 +1,12 @@
 """
 SQLAlchemy ORM models matching the PRD database design.
+
+Fixes applied from UPGRADED_DEEP_REPO_AUDIT.md:
+  - Added UniqueConstraint on user_sessions(user_id, session_id) [DB Audit]
+  - Added ondelete="CASCADE" to all FK columns referencing users/sessions [Issue 5.9]
+  - Added cascade="all, delete-orphan" to User relationships [Issue 5.9]
+  - Added missing DB indexes: users.created_at, sessions.status,
+    notifications.created_at, audit_logs.created_at [DB Audit]
 """
 
 from datetime import datetime
@@ -15,6 +22,7 @@ from sqlalchemy import (
     ForeignKey,
     JSON,
     Index,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 
@@ -24,6 +32,10 @@ from app.database import Base
 class User(Base):
     __tablename__ = "users"
 
+    __table_args__ = (
+        Index("idx_users_created_at", "created_at"),  # Issue: ORDER BY created_at
+    )
+
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     name = Column(String(100), nullable=False)
     email = Column(String(255), unique=True, index=True, nullable=False)
@@ -31,15 +43,25 @@ class User(Base):
     role = Column(Enum("admin", "user", name="user_role"), default="user", nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # relationships
-    user_sessions = relationship("UserSession", back_populates="user")
-    messages = relationship("Message", back_populates="user")
-    audit_logs = relationship("AuditLog", back_populates="actor")
+    # Cascade deletes: removing a User removes all their related rows (Issue 5.9)
+    user_sessions = relationship(
+        "UserSession", back_populates="user", cascade="all, delete-orphan"
+    )
+    messages = relationship(
+        "Message", back_populates="user", cascade="all, delete-orphan"
+    )
+    audit_logs = relationship(
+        "AuditLog", back_populates="actor", cascade="all, delete-orphan"
+    )
     notifications_sent = relationship("Notification", back_populates="creator")
 
 
 class Session(Base):
     __tablename__ = "sessions"
+
+    __table_args__ = (
+        Index("idx_sessions_status", "status"),  # Issue: frequent filter by status
+    )
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     session_name = Column(String(200), nullable=False)
@@ -51,28 +73,33 @@ class Session(Base):
         nullable=False,
     )
 
-    # relationships
-    user_sessions = relationship("UserSession", back_populates="session")
-    messages = relationship("Message", back_populates="session")
+    user_sessions = relationship(
+        "UserSession", back_populates="session", cascade="all, delete-orphan"
+    )
+    messages = relationship(
+        "Message", back_populates="session", cascade="all, delete-orphan"
+    )
 
 
 class UserSession(Base):
     __tablename__ = "user_sessions"
 
     __table_args__ = (
-        Index('idx_us_user_session', 'user_id', 'session_id'),
+        Index("idx_us_user_session", "user_id", "session_id"),
+        # Unique constraint prevents duplicate rows from TOCTOU race (DB Audit)
+        UniqueConstraint("user_id", "session_id", name="uq_user_session"),
     )
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=False)
+    # ondelete="CASCADE" ensures FK rows are removed when parent is deleted (Issue 5.9)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    session_id = Column(Integer, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
     joined_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
     score = Column(Float, default=0.0)
     achieved_target = Column(Boolean, default=False)
     prompt_count = Column(Integer, default=0)
 
-    # relationships
     user = relationship("User", back_populates="user_sessions")
     session = relationship("Session", back_populates="user_sessions")
 
@@ -81,13 +108,13 @@ class Message(Base):
     __tablename__ = "messages"
 
     __table_args__ = (
-        Index('idx_msg_user_session', 'user_id', 'session_id'),
-        Index('idx_msg_prompt_timestamp', 'prompt_timestamp'),
+        Index("idx_msg_user_session", "user_id", "session_id"),
+        Index("idx_msg_prompt_timestamp", "prompt_timestamp"),
     )
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    session_id = Column(Integer, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
     prompt_text = Column(Text, nullable=False)
     response_text = Column(Text, nullable=True)
     prompt_timestamp = Column(DateTime, default=datetime.utcnow)
@@ -95,7 +122,6 @@ class Message(Base):
     latency_ms = Column(Integer, nullable=True)
     success = Column(Boolean, default=True)
 
-    # relationships
     user = relationship("User", back_populates="messages")
     session = relationship("Session", back_populates="messages")
 
@@ -115,6 +141,10 @@ class AdminSettings(Base):
 class Notification(Base):
     __tablename__ = "notifications"
 
+    __table_args__ = (
+        Index("idx_notif_created_at", "created_at"),  # Issue: ORDER BY created_at
+    )
+
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     message = Column(Text, nullable=False)
     priority = Column(
@@ -124,18 +154,20 @@ class Notification(Base):
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # relationships
     creator = relationship("User", back_populates="notifications_sent")
 
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 
+    __table_args__ = (
+        Index("idx_audit_created_at", "created_at"),  # Issue: ORDER BY created_at
+    )
+
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    actor_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    actor_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     action_type = Column(String(100), nullable=False)
     action_data = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # relationships
     actor = relationship("User", back_populates="audit_logs")

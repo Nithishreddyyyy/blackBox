@@ -1,50 +1,57 @@
 /**
  * Centralized API client for the BlackBox backend (FastAPI on port 8000).
+ *
+ * Fixes from UPGRADED_DEEP_REPO_AUDIT:
+ *  - Issue 2.1: Removed clearToken() — it was called but never defined, causing crash on logout
+ *  - Issue 4.2: credentials:"include" always set (not conditional) so HttpOnly cookies are sent
+ *  - Issue 4.1: getToken() removed — tokens are managed server-side via HttpOnly cookies
  */
 
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-export function getWebSocketUrl(path: string, token?: string | null) {
+/**
+ * Build a WebSocket URL from the base API URL.
+ * The backend authenticates via cookie; no token parameter needed.
+ */
+export function getWebSocketUrl(path: string) {
   const url = new URL(path, API_BASE);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  if (token) {
-    url.searchParams.set("token", token);
-  }
   return url.toString();
 }
-
-// No localStorage token helpers anymore, using HttpOnly cookies.
 
 // ---------------------------------------------------------------------------
 // Generic fetch wrapper
 // ---------------------------------------------------------------------------
 
 interface FetchOptions extends RequestInit {
-  /** Skip adding the Authorization header */
-  noAuth?: boolean;
+  /** Skip setting credentials (e.g., for truly public endpoints with no cookies). */
+  noCredentials?: boolean;
 }
 
 export async function apiFetch<T = unknown>(
   path: string,
   opts: FetchOptions = {}
 ): Promise<T> {
-  const { noAuth, headers: extraHeaders, ...rest } = opts;
+  const { noCredentials, headers: extraHeaders, ...rest } = opts;
 
   const headers: Record<string, string> = {
     ...(extraHeaders as Record<string, string>),
   };
 
-  if (!noAuth) {
-    opts.credentials = "include";
-  }
+  // Issue 4.2: Always include credentials so HttpOnly cookies are forwarded
+  const credentials = noCredentials ? "omit" : "include";
 
   // Don't set Content-Type for FormData (browser sets boundary automatically)
   if (!(rest.body instanceof FormData) && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
   }
 
-  const res = await fetch(`${API_BASE}${path}`, { headers, ...rest });
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers,
+    credentials,
+    ...rest,
+  });
 
   if (!res.ok) {
     let detail = res.statusText;
@@ -98,13 +105,15 @@ export async function login(
   return apiFetch<TokenResponse>("/auth/login", {
     method: "POST",
     body: form,
-    noAuth: true,
   });
 }
 
+/**
+ * Logout: tells the backend to delete the HttpOnly cookie.
+ * Issue 2.1: clearToken() was removed since tokens are server-managed.
+ */
 export async function logout(): Promise<void> {
   await apiFetch("/auth/logout", { method: "POST" });
-  clearToken();
 }
 
 export async function getMe(): Promise<UserOut> {

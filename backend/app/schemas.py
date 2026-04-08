@@ -1,18 +1,23 @@
 """
 Pydantic schemas for request / response validation.
+
+Fixes from UPGRADED_DEEP_REPO_AUDIT:
+  - ChatSend.prompt: added min_length=1, max_length=2000 (Issue 5.8)
+  - UserRegister.password: added min_length=8 (Issue 7.6)
 """
 
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 # ── Auth ─────────────────────────────────────────────────
 
 class UserRegister(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1, max_length=100)
     email: EmailStr
-    password: str
+    # Issue 7.6: Enforce minimum password length
+    password: str = Field(..., min_length=8, max_length=128)
 
 
 class UserLogin(BaseModel):
@@ -41,7 +46,8 @@ class UserOut(BaseModel):
 # ── Chat ─────────────────────────────────────────────────
 
 class ChatSend(BaseModel):
-    prompt: str
+    # Issue 5.8: Validate prompt length to prevent oversized payloads
+    prompt: str = Field(..., min_length=1, max_length=2000)
     session_id: int
 
 
@@ -66,7 +72,7 @@ class ChatHistoryResponse(BaseModel):
 # ── Sessions ─────────────────────────────────────────────
 
 class SessionCreate(BaseModel):
-    session_name: str
+    session_name: str = Field(..., min_length=1, max_length=200)
 
 
 class SessionOut(BaseModel):
@@ -122,7 +128,7 @@ class AdminSettingsOut(BaseModel):
 # ── Notifications ────────────────────────────────────────
 
 class NotificationCreate(BaseModel):
-    message: str
+    message: str = Field(..., min_length=1, max_length=1000)
     priority: str = "normal"  # low | normal | high | urgent
 
 

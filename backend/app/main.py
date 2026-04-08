@@ -1,20 +1,30 @@
 """
 BlackBox — AI Red-Team Challenge Platform
 FastAPI application entry point.
+
+Fixes from UPGRADED_DEEP_REPO_AUDIT:
+  - Health check is now async and tests real DB connectivity (Issue 5.5)
+  - CORS uses configurable ALLOWED_ORIGINS from settings (Issue 5.10)
+  - CORS allows only necessary methods/headers (Issue 5.10)
+  - All print() replaced with logger calls (Issue 9.4)
 """
 
+import logging
+import logging.config
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
 
-from app.database import engine, Base, SessionLocal
+from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import engine, Base, SessionLocal, get_db
 from app.models import User, AdminSettings
 from app.auth import hash_password
 from app.config import settings
 from app.limiter import limiter
-from slowapi.errors import RateLimitExceeded
-from slowapi import _rate_limit_exceeded_handler
 
 from app.routes.auth import router as auth_router
 from app.routes.chat import router as chat_router
@@ -22,12 +32,22 @@ from app.routes.admin import router as admin_router
 from app.routes.public import router as public_router
 from app.routes.websocket import router as ws_router
 
+# ── Structured logging setup ─────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)-8s %(name)s — %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+)
+logger = logging.getLogger("blackbox")
 
-async def seed_database():
+
+async def seed_database() -> None:
     """Create default admin user and settings if they don't exist."""
     async with SessionLocal() as db:
         # Seed admin
-        admin = (await db.execute(select(User).filter(User.email == settings.ADMIN_EMAIL))).scalars().first()
+        admin = (
+            await db.execute(select(User).filter(User.email == settings.ADMIN_EMAIL))
+        ).scalars().first()
         if not admin:
             admin = User(
                 name=settings.ADMIN_NAME,
@@ -36,12 +56,11 @@ async def seed_database():
                 role="admin",
             )
             db.add(admin)
-            print(f"[SEED] Admin user created: {settings.ADMIN_EMAIL}")
+            logger.info("Admin user seeded: %s", settings.ADMIN_EMAIL)
 
         # Seed default settings
         admin_settings = (await db.execute(select(AdminSettings))).scalars().first()
         if not admin_settings:
-            # Determine the default model based on the configured provider
             default_model = {
                 "ollama": settings.OLLAMA_MODEL,
                 "openai": settings.OPENAI_MODEL,
@@ -56,7 +75,7 @@ async def seed_database():
                 llm_model=default_model,
             )
             db.add(admin_settings)
-            print("[SEED] Default admin settings created")
+            logger.info("Default admin settings seeded")
 
         await db.commit()
 
@@ -64,18 +83,16 @@ async def seed_database():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle."""
-    # Create all tables safely with async engine
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    print("[STARTUP] Database tables created")
+    logger.info("Database tables verified/created")
 
-    # Seed default data
     await seed_database()
-    print("[STARTUP] Database seeded")
+    logger.info("Database seed complete — application ready")
 
     yield
 
-    print("[SHUTDOWN] Application shutting down")
+    logger.info("Application shutting down")
 
 
 app = FastAPI(
@@ -92,14 +109,13 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-
-# ── CORS ─────────────────────────────────────────────────
+# ── CORS (Issue 5.10: configurable origins, minimal methods) ──────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"], 
+    allow_origins=settings.allowed_origins_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type"],
 )
 
 # ── Routes ───────────────────────────────────────────────
@@ -110,6 +126,14 @@ app.include_router(public_router)
 app.include_router(ws_router)
 
 
-@app.get("/health")
-def health_check():
+# ── Health Check (Issue 5.5: async + real DB connectivity test) ──────────
+
+@app.get("/health", tags=["Health"])
+async def health_check(db: AsyncSession = Depends(get_db)):
+    """
+    Liveness probe. Returns 200 only if the database is reachable.
+    A broken DB connection will return 500, allowing load balancers to
+    route traffic away from sick instances.
+    """
+    await db.execute(select(1))
     return {"status": "healthy", "service": "blackbox-backend"}

@@ -1,16 +1,25 @@
 """
 Admin routes: stats, user management, settings, notifications, leaderboard, sessions, logs.
+
+Fixes from UPGRADED_DEEP_REPO_AUDIT:
+  - Issue 3.4: Fixed broken admin stats queries (select_from correct tables)
+  - Issue 3.3: Leaderboard sort moved to SQL ORDER BY instead of Python sort
+  - Issue 5.7: Removed duplicate `func` import
+  - Issue 3.5: _get_admin_settings moved to app.crud
+  - Issue 9.4: Replaced print() with structured logging
 """
 
+import logging
 from datetime import datetime, timedelta
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func
+from sqlalchemy import func, asc, desc
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from app.crud import get_admin_settings
 from app.database import get_db
 from app.models import (
     User,
@@ -40,19 +49,8 @@ from app.schemas import (
 from app.auth import require_admin, hash_password
 from app.websocket_manager import ws_manager
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["Admin"])
-
-
-# ── Helpers ──────────────────────────────────────────────
-
-async def _get_admin_settings(db: AsyncSession) -> AdminSettings:
-    s = (await db.execute(select(AdminSettings))).scalars().first()
-    if not s:
-        s = AdminSettings()
-        db.add(s)
-        await db.commit()
-        await db.refresh(s)
-    return s
 
 
 # ── Dashboard Stats ────────────────────────────────────
@@ -63,27 +61,48 @@ async def get_stats(
     db: AsyncSession = Depends(get_db),
 ):
     """Real-time dashboard statistics."""
-    total_users = (await db.execute(select(func.count()).select_from(Message).filter(User.role == "user"))).scalar()
-    active_sessions = (await db.execute(select(func.count()).select_from(Message).filter(Session.status == "active"))).scalar()
-    total_messages = (await db.execute(select(func.count()).select_from(Message))).scalar()
 
-    # Active users = users who sent a message in the last 5 minutes
+    # Issue 3.4 Fix: select_from the correct table for each count
+    total_users = (
+        await db.execute(
+            select(func.count()).select_from(User).filter(User.role == "user")
+        )
+    ).scalar()
+
+    active_sessions = (
+        await db.execute(
+            select(func.count()).select_from(Session).filter(Session.status == "active")
+        )
+    ).scalar()
+
+    total_messages = (
+        await db.execute(select(func.count()).select_from(Message))
+    ).scalar()
+
     five_min_ago = datetime.utcnow() - timedelta(minutes=5)
     active_users = (
-        await db.execute(select(func.count(func.distinct(Message.user_id))).filter(Message.prompt_timestamp >= five_min_ago))
+        await db.execute(
+            select(func.count(func.distinct(Message.user_id))).filter(
+                Message.prompt_timestamp >= five_min_ago
+            )
+        )
     ).scalar()
 
     one_min_ago = datetime.utcnow() - timedelta(minutes=1)
     messages_last_minute = (
-        (await db.execute(select(func.count()).select_from(Message).filter(Message.prompt_timestamp >= one_min_ago))).scalar()
-    )
+        await db.execute(
+            select(func.count()).select_from(Message).filter(
+                Message.prompt_timestamp >= one_min_ago
+            )
+        )
+    ).scalar()
 
     return AdminStatsResponse(
-        total_users=total_users,
-        active_sessions=active_sessions,
-        total_messages=total_messages,
+        total_users=total_users or 0,
+        active_sessions=active_sessions or 0,
+        total_messages=total_messages or 0,
         active_users=active_users or 0,
-        messages_last_minute=messages_last_minute,
+        messages_last_minute=messages_last_minute or 0,
     )
 
 
@@ -95,7 +114,9 @@ async def list_users(
     db: AsyncSession = Depends(get_db),
 ):
     """List all registered users."""
-    return (await db.execute(select(User).order_by(User.created_at.desc()))).scalars().all()
+    return (
+        await db.execute(select(User).order_by(User.created_at.desc()))
+    ).scalars().all()
 
 
 @router.post("/users", response_model=UserOut, status_code=201)
@@ -122,6 +143,7 @@ async def create_user(
     ))
     await db.commit()
     await db.refresh(user)
+    logger.info("Admin %s created user %s", admin.email, payload.email)
     return user
 
 
@@ -131,7 +153,7 @@ async def delete_user(
     admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Delete a user."""
+    """Delete a user and all their related data (cascades via ORM)."""
     user = (await db.execute(select(User).filter(User.id == user_id))).scalars().first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -143,8 +165,9 @@ async def delete_user(
         action_type="delete_user",
         action_data={"user_id": user_id, "email": user.email},
     ))
-    db.delete(user)
+    await db.delete(user)
     await db.commit()
+    logger.info("Admin %s deleted user_id=%d", admin.email, user_id)
     return {"detail": "User deleted"}
 
 
@@ -155,7 +178,7 @@ async def get_settings(
     admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    return await _get_admin_settings(db)
+    return await get_admin_settings(db)
 
 
 @router.post("/settings", response_model=AdminSettingsOut)
@@ -165,7 +188,7 @@ async def update_settings(
     db: AsyncSession = Depends(get_db),
 ):
     """Update competition settings."""
-    s = await _get_admin_settings(db)
+    s = await get_admin_settings(db)
     update_data = payload.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(s, key, value)
@@ -177,6 +200,7 @@ async def update_settings(
     ))
     await db.commit()
     await db.refresh(s)
+    logger.info("Admin %s updated settings: %s", admin.email, update_data)
     return s
 
 
@@ -205,6 +229,7 @@ async def create_session(
     ))
     await db.commit()
     await db.refresh(session)
+    logger.info("Admin %s created session '%s'", admin.email, payload.session_name)
     return session
 
 
@@ -216,7 +241,9 @@ async def session_action(
     db: AsyncSession = Depends(get_db),
 ):
     """Start, pause, resume, or end a session."""
-    session = (await db.execute(select(Session).filter(Session.id == session_id))).scalars().first()
+    session = (
+        await db.execute(select(Session).filter(Session.id == session_id))
+    ).scalars().first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
@@ -236,7 +263,7 @@ async def session_action(
             detail=f"Cannot {action} a session in '{session.status}' status",
         )
 
-    if action == "start" or action == "resume":
+    if action in ("start", "resume"):
         session.status = "active"
         if action == "start":
             session.start_time = datetime.utcnow()
@@ -254,14 +281,13 @@ async def session_action(
     await db.commit()
     await db.refresh(session)
 
-    # Broadcast session state change
     await ws_manager.broadcast({
         "type": "session_update",
         "session_id": session.id,
         "status": session.status,
         "action": action,
     })
-
+    logger.info("Admin %s performed '%s' on session_id=%d", admin.email, action, session_id)
     return session
 
 
@@ -279,10 +305,9 @@ async def session_participants(
             .filter(UserSession.session_id == session_id)
         )
     ).scalars().all()
-    
-    results = []
-    for us in user_sessions:
-        entry = UserSessionOut(
+
+    return [
+        UserSessionOut(
             id=us.id,
             user_id=us.user_id,
             session_id=us.session_id,
@@ -294,8 +319,8 @@ async def session_participants(
             user_name=us.user.name if us.user else None,
             user_email=us.user.email if us.user else None,
         )
-        results.append(entry)
-    return results
+        for us in user_sessions
+    ]
 
 
 @router.post("/sessions/{session_id}/reset/{user_id}")
@@ -307,22 +332,22 @@ async def reset_user_session(
 ):
     """Reset a user's session (clear messages and stats)."""
     user_session = (await db.execute(
-        select(UserSession)
-        .filter(UserSession.user_id == user_id, UserSession.session_id == session_id)
+        select(UserSession).filter(
+            UserSession.user_id == user_id,
+            UserSession.session_id == session_id,
+        )
     )).scalars().first()
-    
+
     if not user_session:
         raise HTTPException(status_code=404, detail="User session not found")
 
-    # Delete messages
     await db.execute(
         Message.__table__.delete().where(
-            Message.user_id == user_id, 
-            Message.session_id == session_id
+            Message.user_id == user_id,
+            Message.session_id == session_id,
         )
     )
 
-    # Reset stats
     user_session.prompt_count = 0
     user_session.achieved_target = False
     user_session.completed_at = None
@@ -334,6 +359,7 @@ async def reset_user_session(
         action_data={"user_id": user_id, "session_id": session_id},
     ))
     await db.commit()
+    logger.info("Admin %s reset user_id=%d in session_id=%d", admin.email, user_id, session_id)
     return {"detail": "User session reset"}
 
 
@@ -360,7 +386,6 @@ async def send_notification(
     await db.commit()
     await db.refresh(notification)
 
-    # Broadcast via WebSocket
     await ws_manager.broadcast({
         "type": "notification",
         "id": notification.id,
@@ -369,6 +394,7 @@ async def send_notification(
         "created_at": notification.created_at.isoformat(),
     })
 
+    logger.info("Admin %s broadcast notification id=%d", admin.email, notification.id)
     return notification
 
 
@@ -377,10 +403,14 @@ async def list_notifications(
     admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    return (await db.execute(select(Notification).order_by(Notification.created_at.desc()).limit(50))).scalars().all()
+    return (
+        await db.execute(
+            select(Notification).order_by(Notification.created_at.desc()).limit(50)
+        )
+    ).scalars().all()
 
 
-# ── Leaderboard ──────────────────────────────────────────
+# ── Leaderboard (Issue 3.3: Sort in SQL, not Python) ─────
 
 @router.get("/leaderboard/{session_id}", response_model=LeaderboardResponse)
 async def get_leaderboard(
@@ -388,27 +418,35 @@ async def get_leaderboard(
     admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Leaderboard for a specific session."""
-    session = (await db.execute(select(Session).filter(Session.id == session_id))).scalars().first()
+    """Leaderboard for a specific session — sorted by SQL ORDER BY."""
+    session = (
+        await db.execute(select(Session).filter(Session.id == session_id))
+    ).scalars().first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    # Issue 3.3: Use DB-level ordering instead of Python sort
     user_sessions = (
         await db.execute(
             select(UserSession)
             .options(selectinload(UserSession.user))
             .filter(UserSession.session_id == session_id)
+            .order_by(
+                desc(UserSession.achieved_target),
+                desc(UserSession.score),
+                asc(UserSession.prompt_count),
+                asc(UserSession.completed_at),
+            )
         )
     ).scalars().all()
 
     entries = []
-    for us in user_sessions:
+    for rank, us in enumerate(user_sessions, 1):
         completion_time = None
         if us.completed_at and us.joined_at:
             completion_time = (us.completed_at - us.joined_at).total_seconds()
-
         entries.append(LeaderboardEntry(
-            rank=0,  # will be set after sorting
+            rank=rank,
             user_id=us.user_id,
             user_name=us.user.name if us.user else "Unknown",
             prompt_count=us.prompt_count,
@@ -416,19 +454,6 @@ async def get_leaderboard(
             completion_time_seconds=completion_time,
             score=us.score,
         ))
-
-    # Sort: achieved_target first, then by score descending, then by fewer prompts
-    entries.sort(
-        key=lambda e: (
-            not e.achieved_target,  # True first
-            -e.score,
-            e.prompt_count,
-            e.completion_time_seconds or float("inf"),
-        )
-    )
-
-    for i, entry in enumerate(entries, 1):
-        entry.rank = i
 
     return LeaderboardResponse(
         session_id=session_id,
@@ -476,4 +501,8 @@ async def get_audit_logs(
     admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    return (await db.execute(select(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit))).scalars().all()
+    return (
+        await db.execute(
+            select(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit)
+        )
+    ).scalars().all()

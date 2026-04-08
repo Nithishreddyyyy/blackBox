@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useRequireAuth } from "@/lib/auth";
-import { apiFetch, getToken, getWebSocketUrl } from "@/lib/api";
+import { apiFetch, getWebSocketUrl } from "@/lib/api";
 import chatStyles from "./chat.module.css";
 
 // ── Types ────────────────────────────────────────────────
@@ -115,7 +115,7 @@ export default function UserChatPage() {
   useEffect(() => {
     if (authLoading || !user) return;
 
-    const wsUrl = getWebSocketUrl("/ws");
+    const wsUrl = getWebSocketUrl("/ws"); // Issue 2.2 fix: no token param needed
 
     let ws: WebSocket;
     let reconnectTimer: NodeJS.Timeout;
@@ -155,10 +155,14 @@ export default function UserChatPage() {
 
       ws.onopen = () => {
         reconnectAttempts = 0; // reset attempts on success
+        // Refetch notifications in case any were missed during disconnect
+        apiFetch<Notification[]>("/notifications/recent")
+          .then(setNotifications)
+          .catch(() => {});
       };
 
       ws.onclose = () => {
-        // Exponential backoff with a cap at 30 seconds
+        // Exponential backoff capped at 30 seconds
         const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
         reconnectAttempts++;
         reconnectTimer = setTimeout(connect, delay);
@@ -282,7 +286,11 @@ export default function UserChatPage() {
               const s = sessions.find(
                 (s) => s.id === Number(e.target.value)
               );
-              if (s) setActiveSession(s);
+              if (s) {
+                // Clear messages immediately when switching sessions
+                setMessages([]);
+                setActiveSession(s);
+              }
             }}
           >
             {sessions.map((s) => (
