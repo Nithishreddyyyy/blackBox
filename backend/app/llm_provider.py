@@ -10,12 +10,17 @@ Switch provider via LLM_PROVIDER env var without touching code.
 """
 
 import time
+import asyncio
 from typing import List, Dict
 
 import httpx
 from openai import OpenAI
 
 from app.config import settings
+
+
+# Global concurrency limit for LLM calls
+LLM_SEMAPHORE = asyncio.Semaphore(5)
 
 
 class LLMProvider:
@@ -38,13 +43,16 @@ class OllamaProvider(LLMProvider):
         self, messages: List[Dict[str, str]], model: str | None = None
     ) -> str:
         model = model or self.default_model
+
         async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(
                 f"{self.base_url}/api/chat",
                 json={"model": model, "messages": messages, "stream": False},
             )
+
             response.raise_for_status()
             data = response.json()
+
             return data.get("message", {}).get("content", "")
 
 
@@ -59,10 +67,12 @@ class OpenAIProvider(LLMProvider):
         self, messages: List[Dict[str, str]], model: str | None = None
     ) -> str:
         model = model or self.default_model
+
         response = self.client.chat.completions.create(
             model=model,
             messages=messages,
         )
+
         return response.choices[0].message.content or ""
 
 
@@ -80,10 +90,12 @@ class OpenRouterProvider(LLMProvider):
         self, messages: List[Dict[str, str]], model: str | None = None
     ) -> str:
         model = model or self.default_model
+
         response = self.client.chat.completions.create(
             model=model,
             messages=messages,
         )
+
         return response.choices[0].message.content or ""
 
 
@@ -100,13 +112,21 @@ _instance: LLMProvider | None = None
 
 def get_llm_provider(provider_name: str | None = None) -> LLMProvider:
     """Return a cached LLM provider instance (or build a new one if provider changed)."""
+
     global _instance
+
     name = (provider_name or settings.LLM_PROVIDER).lower()
+
     if _instance is None or type(_instance).__name__.lower().replace("provider", "") != name:
         cls = _providers.get(name)
+
         if cls is None:
-            raise ValueError(f"Unknown LLM provider: {name}. Choose from {list(_providers)}")
+            raise ValueError(
+                f"Unknown LLM provider: {name}. Choose from {list(_providers)}"
+            )
+
         _instance = cls()
+
     return _instance
 
 
@@ -120,16 +140,34 @@ async def generate_response(
     """
     High-level helper: build messages list → call LLM → return (response_text, latency_ms).
     """
+
     messages = []
+
     if system_prompt or settings.LLM_SYSTEM_PROMPT:
-        messages.append({"role": "system", "content": system_prompt or settings.LLM_SYSTEM_PROMPT})
+        messages.append(
+            {"role": "system", "content": system_prompt or settings.LLM_SYSTEM_PROMPT}
+        )
+
     if conversation_history:
         messages.extend(conversation_history)
+
     messages.append({"role": "user", "content": prompt})
 
     provider = get_llm_provider(provider_name)
-    start = time.perf_counter()
-    response_text = await provider.chat(messages, model=model)
-    latency_ms = int((time.perf_counter() - start) * 1000)
 
-    return response_text, latency_ms
+    try:
+        async with LLM_SEMAPHORE:
+
+            start = time.perf_counter()
+
+            response_text = await provider.chat(messages, model=model)
+
+            latency_ms = int((time.perf_counter() - start) * 1000)
+
+            return response_text, latency_ms
+
+    except Exception as e:
+
+        print("LLM ERROR:", e)
+
+        return "⚠️ Model is currently busy. Please try again.", 0
