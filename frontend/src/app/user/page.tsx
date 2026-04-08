@@ -65,6 +65,12 @@ export default function UserChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
+  const loadNotifications = useCallback(() => {
+    return apiFetch<Notification[]>("/notifications/recent")
+      .then(setNotifications)
+      .catch(() => {});
+  }, []);
+
   // ── Fetch active sessions ──────────────────────────────
 
   useEffect(() => {
@@ -100,21 +106,12 @@ export default function UserChatPage() {
     loadHistory();
   }, [loadHistory]);
 
-  // ── Poll notifications ─────────────────────────────────
+  // ── Fetch notifications ────────────────────────────────
 
   useEffect(() => {
     if (authLoading || !user) return;
-
-    const fetchNotifs = () => {
-      apiFetch<Notification[]>("/notifications/recent")
-        .then(setNotifications)
-        .catch(() => {});
-    };
-
-    fetchNotifs();
-    const interval = setInterval(fetchNotifs, 10_000);
-    return () => clearInterval(interval);
-  }, [authLoading, user]);
+    loadNotifications();
+  }, [authLoading, user, loadNotifications]);
 
   // ── WebSocket ──────────────────────────────────────────
 
@@ -129,6 +126,10 @@ export default function UserChatPage() {
     function connect() {
       ws = new WebSocket(wsUrl);
       wsRef.current = ws;
+
+      ws.onopen = () => {
+        loadNotifications();
+      };
 
       ws.onmessage = (event) => {
         try {
@@ -168,7 +169,7 @@ export default function UserChatPage() {
       clearTimeout(reconnectTimer);
       ws?.close();
     };
-  }, [authLoading, user]);
+  }, [authLoading, user, loadNotifications]);
 
   // ── Send prompt ────────────────────────────────────────
 
@@ -178,6 +179,8 @@ export default function UserChatPage() {
 
     setError("");
     setSending(true);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30_000);
 
     try {
       const newMsg = await apiFetch<ChatMessage>("/chat/send", {
@@ -186,6 +189,7 @@ export default function UserChatPage() {
           prompt: prompt.trim(),
           session_id: activeSession.id,
         }),
+        signal: controller.signal,
       });
 
       setMessages((prev) => [...prev, newMsg]);
@@ -196,8 +200,13 @@ export default function UserChatPage() {
       setPrompt("");
       setTimeout(scrollToBottom, 100);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to send prompt");
+      if (err instanceof Error && err.name === "AbortError") {
+        setError("The model took too long to respond. Please try again.");
+      } else {
+        setError(err instanceof Error ? err.message : "Failed to send prompt");
+      }
     } finally {
+      clearTimeout(timeoutId);
       setSending(false);
     }
   }
@@ -281,7 +290,13 @@ export default function UserChatPage() {
               const s = sessions.find(
                 (s) => s.id === Number(e.target.value)
               );
-              if (s) setActiveSession(s);
+              if (s) {
+                setMessages([]);
+                setTotalUsed(0);
+                setRemaining(0);
+                setError("");
+                setActiveSession(s);
+              }
             }}
           >
             {sessions.map((s) => (

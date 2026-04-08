@@ -4,8 +4,10 @@ FastAPI application entry point.
 """
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.database import engine, Base, SessionLocal
 from app.models import User, AdminSettings
@@ -17,6 +19,15 @@ from app.routes.chat import router as chat_router
 from app.routes.admin import router as admin_router
 from app.routes.public import router as public_router
 from app.routes.websocket import router as ws_router
+
+
+def check_database_connection() -> None:
+    """Run a lightweight query to verify DB connectivity."""
+    db = SessionLocal()
+    try:
+        db.execute(text("SELECT 1"))
+    finally:
+        db.close()
 
 
 def seed_database():
@@ -89,10 +100,10 @@ app = FastAPI(
 # ── CORS ─────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Restrict in production
+    allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Content-Type"],
 )
 
 # ── Routes ───────────────────────────────────────────────
@@ -104,5 +115,17 @@ app.include_router(ws_router)
 
 
 @app.get("/health")
-def health_check():
-    return {"status": "healthy", "service": "blackbox-backend"}
+async def health_check():
+    try:
+        await run_in_threadpool(check_database_connection)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Database connectivity check failed",
+        ) from exc
+
+    return {
+        "status": "healthy",
+        "service": "blackbox-backend",
+        "database": "connected",
+    }

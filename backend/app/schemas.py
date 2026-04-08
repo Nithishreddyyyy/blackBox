@@ -4,7 +4,7 @@ Pydantic schemas for request / response validation.
 
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 # ── Auth ─────────────────────────────────────────────────
@@ -39,7 +39,7 @@ class UserOut(BaseModel):
 # ── Chat ─────────────────────────────────────────────────
 
 class ChatSend(BaseModel):
-    prompt: str
+    prompt: str = Field(..., min_length=1, max_length=2000)
     session_id: int
 
 
