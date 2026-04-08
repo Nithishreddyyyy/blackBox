@@ -18,24 +18,22 @@ async def websocket_endpoint(
 ):
     """
     WebSocket connection for real-time notifications.
-
-    Connect with: ws://host/ws?token=<jwt_token>
-    
-    Messages received by clients:
-      - {"type": "notification", "message": "...", "priority": "...", ...}
-      - {"type": "session_update", "session_id": ..., "status": "...", "action": "..."}
-      - {"type": "target_achieved", "user_id": ..., "user_name": "...", ...}
+    Uses 'access_token' cookie primarily, falls back to ?token= query param.
     """
-    user_id = None
+    user_id: int | None = None
 
-    # Try to authenticate via token
-    if token:
+    # Try cookie first, then query param
+    actual_token = websocket.cookies.get("access_token") or token
+
+    if actual_token:
         try:
             payload = jwt.decode(
-                token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
+                actual_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
             )
-            user_id = payload.get("sub")
-        except JWTError:
+            sub = payload.get("sub")
+            if sub is not None:
+                user_id = int(sub)
+        except (JWTError, ValueError, TypeError):
             pass  # Allow anonymous connections for public displays
 
     await ws_manager.connect(websocket, user_id)

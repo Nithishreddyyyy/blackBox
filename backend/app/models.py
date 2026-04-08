@@ -14,6 +14,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     JSON,
+    Index,
 )
 from sqlalchemy.orm import relationship
 
@@ -58,6 +59,10 @@ class Session(Base):
 class UserSession(Base):
     __tablename__ = "user_sessions"
 
+    __table_args__ = (
+        Index('idx_us_user_session', 'user_id', 'session_id'),
+    )
+
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     session_id = Column(Integer, ForeignKey("sessions.id"), nullable=False)
@@ -74,6 +79,11 @@ class UserSession(Base):
 
 class Message(Base):
     __tablename__ = "messages"
+
+    __table_args__ = (
+        Index('idx_msg_user_session', 'user_id', 'session_id'),
+        Index('idx_msg_prompt_timestamp', 'prompt_timestamp'),
+    )
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)

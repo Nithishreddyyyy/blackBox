@@ -2,9 +2,10 @@
 Authentication routes: register, login, logout, me.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session as DBSession
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.database import get_db
 from app.models import User, AuditLog
@@ -15,9 +16,10 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
 @router.post("/register", response_model=UserOut, status_code=201)
-def register(payload: UserRegister, db: DBSession = Depends(get_db)):
+async def register(payload: UserRegister, db: AsyncSession = Depends(get_db)):
     """Register a new participant account."""
-    if db.query(User).filter(User.email == payload.email).first():
+    existing_user = await db.execute(select(User).filter(User.email == payload.email))
+    if existing_user.scalars().first():
         raise HTTPException(status_code=400, detail="Email already registered")
 
     user = User(
@@ -27,30 +29,43 @@ def register(payload: UserRegister, db: DBSession = Depends(get_db)):
         role="user",
     )
     db.add(user)
-    db.commit()
-    db.refresh(user)
+    await db.commit()
+    await db.refresh(user)
     return user
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(
+async def login(
+    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
-    db: DBSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """
-    Authenticate and return a JWT token.
+    Authenticate and return a JWT token, also set in HttpOnly cookie.
     
     In the Swagger Authorize dialog, use your **email** as the username.
     """
-    user = db.query(User).filter(User.email == form_data.username).first()
+    user_result = await db.execute(select(User).filter(User.email == form_data.username))
+    user = user_result.scalars().first()
+    
     if not user or not verify_password(form_data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     token = create_access_token(data={"sub": user.id, "role": user.role})
 
+    # Set HttpOnly Cookie
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=7200, # 2 hours
+    )
+
     # Audit
     db.add(AuditLog(actor_id=user.id, action_type="login", action_data={}))
-    db.commit()
+    await db.commit()
 
     return TokenResponse(
         access_token=token, role=user.role, user_id=user.id, name=user.name
@@ -58,14 +73,16 @@ def login(
 
 
 @router.post("/logout")
-def logout(current_user: User = Depends(get_current_user), db: DBSession = Depends(get_db)):
+async def logout(response: Response, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Log out (server-side audit only — client discards the token)."""
+    response.delete_cookie("access_token")
+    
     db.add(AuditLog(actor_id=current_user.id, action_type="logout", action_data={}))
-    db.commit()
+    await db.commit()
     return {"detail": "Logged out successfully"}
 
 
 @router.get("/me", response_model=UserOut)
-def me(current_user: User = Depends(get_current_user)):
+async def me(current_user: User = Depends(get_current_user)):
     """Return the currently authenticated user's profile."""
     return current_user

@@ -105,15 +105,9 @@ export default function UserChatPage() {
   useEffect(() => {
     if (authLoading || !user) return;
 
-    const fetchNotifs = () => {
-      apiFetch<Notification[]>("/notifications/recent")
-        .then(setNotifications)
-        .catch(() => {});
-    };
-
-    fetchNotifs();
-    const interval = setInterval(fetchNotifs, 10_000);
-    return () => clearInterval(interval);
+    apiFetch<Notification[]>("/notifications/recent")
+      .then(setNotifications)
+      .catch(() => {});
   }, [authLoading, user]);
 
   // ── WebSocket ──────────────────────────────────────────
@@ -121,11 +115,12 @@ export default function UserChatPage() {
   useEffect(() => {
     if (authLoading || !user) return;
 
-    const token = getToken();
-    const wsUrl = getWebSocketUrl("/ws", token);
+    const wsUrl = getWebSocketUrl("/ws");
 
     let ws: WebSocket;
     let reconnectTimer: NodeJS.Timeout;
+
+    let reconnectAttempts = 0;
 
     function connect() {
       ws = new WebSocket(wsUrl);
@@ -158,8 +153,15 @@ export default function UserChatPage() {
         }
       };
 
+      ws.onopen = () => {
+        reconnectAttempts = 0; // reset attempts on success
+      };
+
       ws.onclose = () => {
-        reconnectTimer = setTimeout(connect, 5000);
+        // Exponential backoff with a cap at 30 seconds
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+        reconnectAttempts++;
+        reconnectTimer = setTimeout(connect, delay);
       };
     }
 

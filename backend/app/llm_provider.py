@@ -14,7 +14,7 @@ import asyncio
 from typing import List, Dict
 
 import httpx
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 from app.config import settings
 
@@ -60,7 +60,7 @@ class OpenAIProvider(LLMProvider):
     """OpenAI API (gpt-4o, etc.)."""
 
     def __init__(self):
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
         self.default_model = settings.OPENAI_MODEL
 
     async def chat(
@@ -68,7 +68,7 @@ class OpenAIProvider(LLMProvider):
     ) -> str:
         model = model or self.default_model
 
-        response = self.client.chat.completions.create(
+        response = await self.client.chat.completions.create(
             model=model,
             messages=messages,
         )
@@ -80,7 +80,7 @@ class OpenRouterProvider(LLMProvider):
     """OpenRouter API (OpenAI-compatible)."""
 
     def __init__(self):
-        self.client = OpenAI(
+        self.client = AsyncOpenAI(
             api_key=settings.OPENROUTER_API_KEY,
             base_url="https://openrouter.ai/api/v1",
         )
@@ -91,7 +91,7 @@ class OpenRouterProvider(LLMProvider):
     ) -> str:
         model = model or self.default_model
 
-        response = self.client.chat.completions.create(
+        response = await self.client.chat.completions.create(
             model=model,
             messages=messages,
         )

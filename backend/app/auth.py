@@ -5,12 +5,13 @@ JWT & password hashing utilities.
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 import bcrypt
 from passlib.context import CryptContext
-from sqlalchemy.orm import Session as DBSession
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.config import settings
 from app.database import get_db
@@ -25,7 +26,7 @@ if not hasattr(bcrypt, "__about__"):
     bcrypt.__about__ = _BcryptAbout()
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
 
 # ── Password helpers ─────────────────────────────────────
@@ -66,10 +67,20 @@ def decode_token(token: str) -> dict:
 
 # ── FastAPI dependencies ─────────────────────────────────
 
-def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: DBSession = Depends(get_db),
-) -> User:
+def get_token(request: Request, token: Optional[str] = Depends(oauth2_scheme)) -> str:
+    # Try Header
+    if token:
+        return token
+    # Try Cookie
+    cookie_token = request.cookies.get("access_token")
+    if cookie_token:
+        return cookie_token
+    raise HTTPException(status_code=401, detail="Not authenticated")
+
+
+async def get_current_user_id_only(
+    token: str = Depends(get_token)
+) -> int:
     payload = decode_token(token)
     sub = payload.get("sub")
     if sub is None:
@@ -78,13 +89,22 @@ def get_current_user(
         user_id = int(sub)
     except (ValueError, TypeError):
         raise HTTPException(status_code=401, detail="Invalid token payload")
-    user = db.query(User).filter(User.id == user_id).first()
+    return user_id
+
+
+async def get_current_user(
+    user_id: int = Depends(get_current_user_id_only),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    result = await db.execute(select(User).filter(User.id == user_id))
+    user = result.scalars().first()
+    
     if user is None:
         raise HTTPException(status_code=401, detail="User not found")
     return user
 
 
-def require_admin(current_user: User = Depends(get_current_user)) -> User:
+async def require_admin(current_user: User = Depends(get_current_user)) -> User:
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     return current_user

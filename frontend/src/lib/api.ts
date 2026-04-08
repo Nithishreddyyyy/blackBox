@@ -14,22 +14,7 @@ export function getWebSocketUrl(path: string, token?: string | null) {
   return url.toString();
 }
 
-// ---------------------------------------------------------------------------
-// Token helpers
-// ---------------------------------------------------------------------------
-
-export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("bb_token");
-}
-
-export function setToken(token: string) {
-  localStorage.setItem("bb_token", token);
-}
-
-export function clearToken() {
-  localStorage.removeItem("bb_token");
-}
+// No localStorage token helpers anymore, using HttpOnly cookies.
 
 // ---------------------------------------------------------------------------
 // Generic fetch wrapper
@@ -51,10 +36,7 @@ export async function apiFetch<T = unknown>(
   };
 
   if (!noAuth) {
-    const token = getToken();
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
+    opts.credentials = "include";
   }
 
   // Don't set Content-Type for FormData (browser sets boundary automatically)

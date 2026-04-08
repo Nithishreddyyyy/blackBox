@@ -8,7 +8,11 @@ from typing import Optional
 
 class Settings(BaseSettings):
     # ── Database ─────────────────────────────────────────
-    DATABASE_URL: str = "mysql+pymysql://root:password@localhost:3306/blackbox"
+    DATABASE_URL: str = "mysql+asyncmy://root:password@localhost:3306/blackbox"
+
+    @property
+    def async_database_url(self) -> str:
+        return self.DATABASE_URL.replace("mysql+pymysql://", "mysql+asyncmy://").replace("mysql://", "mysql+asyncmy://")
 
     # ── JWT ──────────────────────────────────────────────
     SECRET_KEY: str = "change-me-to-a-random-secret-key-in-production"
