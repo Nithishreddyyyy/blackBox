@@ -189,8 +189,10 @@ export default function UserChatPage() {
       });
 
       setMessages((prev) => [...prev, newMsg]);
-      setTotalUsed((prev) => prev + 1);
-      setRemaining((prev) => Math.max(0, prev - 1));
+      if (newMsg.success) {
+        setTotalUsed((prev) => prev + 1);
+        setRemaining((prev) => Math.max(0, prev - 1));
+      }
       setPrompt("");
       setTimeout(scrollToBottom, 100);
     } catch (err: unknown) {

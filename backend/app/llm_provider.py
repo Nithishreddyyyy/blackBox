@@ -14,7 +14,7 @@ import asyncio
 from typing import List, Dict
 
 import httpx
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 from app.config import settings
 
@@ -60,7 +60,7 @@ class OpenAIProvider(LLMProvider):
     """OpenAI API (gpt-4o, etc.)."""
 
     def __init__(self):
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
         self.default_model = settings.OPENAI_MODEL
 
     async def chat(
@@ -68,7 +68,7 @@ class OpenAIProvider(LLMProvider):
     ) -> str:
         model = model or self.default_model
 
-        response = self.client.chat.completions.create(
+        response = await self.client.chat.completions.create(
             model=model,
             messages=messages,
         )
@@ -80,7 +80,7 @@ class OpenRouterProvider(LLMProvider):
     """OpenRouter API (OpenAI-compatible)."""
 
     def __init__(self):
-        self.client = OpenAI(
+        self.client = AsyncOpenAI(
             api_key=settings.OPENROUTER_API_KEY,
             base_url="https://openrouter.ai/api/v1",
         )
@@ -91,7 +91,7 @@ class OpenRouterProvider(LLMProvider):
     ) -> str:
         model = model or self.default_model
 
-        response = self.client.chat.completions.create(
+        response = await self.client.chat.completions.create(
             model=model,
             messages=messages,
         )
@@ -155,19 +155,14 @@ async def generate_response(
 
     provider = get_llm_provider(provider_name)
 
-    try:
-        async with LLM_SEMAPHORE:
-
-            start = time.perf_counter()
-
+    async with LLM_SEMAPHORE:
+        start = time.perf_counter()
+        try:
             response_text = await provider.chat(messages, model=model)
+        except Exception as e:
+            print("LLM ERROR:", e)
+            raise RuntimeError("Model is currently busy. Please try again.") from e
 
-            latency_ms = int((time.perf_counter() - start) * 1000)
+        latency_ms = int((time.perf_counter() - start) * 1000)
 
-            return response_text, latency_ms
-
-    except Exception as e:
-
-        print("LLM ERROR:", e)
-
-        return "⚠️ Model is currently busy. Please try again.", 0
+        return response_text, latency_ms

@@ -7,7 +7,7 @@ from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
-from sqlalchemy.orm import Session as DBSession
+from sqlalchemy.orm import Session as DBSession, joinedload
 
 from app.database import get_db
 from app.models import (
@@ -274,12 +274,13 @@ def session_participants(
     """List all participants in a session with their stats."""
     user_sessions = (
         db.query(UserSession)
+        .options(joinedload(UserSession.user))
         .filter(UserSession.session_id == session_id)
+        .order_by(UserSession.joined_at.asc())
         .all()
     )
     results = []
     for us in user_sessions:
-        user = db.query(User).filter(User.id == us.user_id).first()
         entry = UserSessionOut(
             id=us.id,
             user_id=us.user_id,
@@ -289,8 +290,8 @@ def session_participants(
             score=us.score,
             achieved_target=us.achieved_target,
             prompt_count=us.prompt_count,
-            user_name=user.name if user else None,
-            user_email=user.email if user else None,
+            user_name=us.user.name if us.user else None,
+            user_email=us.user.email if us.user else None,
         )
         results.append(entry)
     return results
@@ -390,39 +391,32 @@ def get_leaderboard(
 
     user_sessions = (
         db.query(UserSession)
+        .options(joinedload(UserSession.user))
         .filter(UserSession.session_id == session_id)
+        .order_by(
+            UserSession.achieved_target.desc(),
+            UserSession.score.desc(),
+            UserSession.prompt_count.asc(),
+            UserSession.completed_at.asc(),
+        )
         .all()
     )
 
     entries = []
-    for us in user_sessions:
-        user = db.query(User).filter(User.id == us.user_id).first()
+    for rank, us in enumerate(user_sessions, 1):
         completion_time = None
         if us.completed_at and us.joined_at:
             completion_time = (us.completed_at - us.joined_at).total_seconds()
 
         entries.append(LeaderboardEntry(
-            rank=0,  # will be set after sorting
+            rank=rank,
             user_id=us.user_id,
-            user_name=user.name if user else "Unknown",
+            user_name=us.user.name if us.user else "Unknown",
             prompt_count=us.prompt_count,
             achieved_target=us.achieved_target,
             completion_time_seconds=completion_time,
             score=us.score,
         ))
-
-    # Sort: achieved_target first, then by score descending, then by fewer prompts
-    entries.sort(
-        key=lambda e: (
-            not e.achieved_target,  # True first
-            -e.score,
-            e.prompt_count,
-            e.completion_time_seconds or float("inf"),
-        )
-    )
-
-    for i, entry in enumerate(entries, 1):
-        entry.rank = i
 
     return LeaderboardResponse(
         session_id=session_id,

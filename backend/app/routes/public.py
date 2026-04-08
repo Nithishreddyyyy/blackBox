@@ -5,10 +5,10 @@ Public routes available to authenticated participants (non-admin).
 from typing import List
 
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session as DBSession
+from sqlalchemy.orm import Session as DBSession, joinedload
 
 from app.database import get_db
-from app.models import User, Session, Notification
+from app.models import User, Session, Notification, UserSession
 from app.schemas import SessionOut, NotificationOut
 from app.auth import get_current_user
 
@@ -50,26 +50,27 @@ def public_leaderboard(
     db: DBSession = Depends(get_db),
 ):
     """Public leaderboard (limited info — no prompt texts)."""
-    from app.models import UserSession
-
     user_sessions = (
         db.query(UserSession)
+        .options(joinedload(UserSession.user))
         .filter(UserSession.session_id == session_id)
+        .order_by(
+            UserSession.achieved_target.desc(),
+            UserSession.score.desc(),
+            UserSession.prompt_count.asc(),
+            UserSession.completed_at.asc(),
+        )
         .all()
     )
 
     entries = []
-    for us in user_sessions:
-        user = db.query(User).filter(User.id == us.user_id).first()
+    for rank, us in enumerate(user_sessions, 1):
         entries.append({
-            "user_name": user.name if user else "Unknown",
+            "rank": rank,
+            "user_name": us.user.name if us.user else "Unknown",
             "prompt_count": us.prompt_count,
             "achieved_target": us.achieved_target,
             "score": us.score,
         })
-
-    entries.sort(key=lambda e: (-e["score"], e["prompt_count"]))
-    for i, entry in enumerate(entries, 1):
-        entry["rank"] = i
 
     return {"session_id": session_id, "entries": entries}

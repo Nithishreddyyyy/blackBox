@@ -9,10 +9,9 @@ from fastapi import Depends, HTTPException, Request, status
 from jose import JWTError, jwt
 import bcrypt
 from passlib.context import CryptContext
-from sqlalchemy.orm import Session as DBSession
 
 from app.config import settings
-from app.database import get_db
+from app.database import SessionLocal
 from app.models import User
 
 # Passlib 1.7.x still checks bcrypt.__about__.__version__, which bcrypt 4.1+
@@ -72,7 +71,6 @@ def get_token(request: Request) -> str:
 
 def get_current_user(
     token: str = Depends(get_token),
-    db: DBSession = Depends(get_db),
 ) -> User:
     payload = decode_token(token)
     sub = payload.get("sub")
@@ -82,10 +80,15 @@ def get_current_user(
         user_id = int(sub)
     except (ValueError, TypeError):
         raise HTTPException(status_code=401, detail="Invalid token payload")
-    user = db.query(User).filter(User.id == user_id).first()
-    if user is None:
-        raise HTTPException(status_code=401, detail="User not found")
-    return user
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user is None:
+            raise HTTPException(status_code=401, detail="User not found")
+        db.expunge(user)
+        return user
+    finally:
+        db.close()
 
 
 def require_admin(current_user: User = Depends(get_current_user)) -> User:
