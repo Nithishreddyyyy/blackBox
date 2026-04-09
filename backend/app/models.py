@@ -100,6 +100,7 @@ class AdminSettings(Base):
     challenge_duration = Column(Integer, default=3600)  # seconds
     llm_provider = Column(String(50), default="ollama")
     llm_model = Column(String(100), default="llama3")
+    leaderboard_enabled = Column(Boolean, default=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 

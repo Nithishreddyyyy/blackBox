@@ -68,6 +68,23 @@ def ensure_schema_compatibility():
             )
             print("[MIGRATION] Backfilled llm_system_prompts from llm_system_prompt")
 
+        # Add leaderboard_enabled column if it doesn't exist
+        has_leaderboard_enabled = conn.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'admin_settings'
+                  AND column_name = 'leaderboard_enabled'
+                """
+            )
+        ).scalar() or 0
+
+        if has_leaderboard_enabled == 0:
+            conn.execute(text("ALTER TABLE admin_settings ADD COLUMN leaderboard_enabled BOOLEAN DEFAULT TRUE"))
+            print("[MIGRATION] Added admin_settings.leaderboard_enabled")
+
 
 def seed_database():
     """Create default admin user and settings if they don't exist."""

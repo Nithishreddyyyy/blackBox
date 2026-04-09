@@ -116,6 +116,7 @@ class AdminSettingsUpdate(BaseModel):
     challenge_duration: Optional[int] = None
     llm_provider: Optional[str] = None
     llm_model: Optional[str] = None
+    leaderboard_enabled: Optional[bool] = None
 
 
 class AdminSettingsOut(BaseModel):
@@ -125,6 +126,7 @@ class AdminSettingsOut(BaseModel):
     challenge_duration: int
     llm_provider: str
     llm_model: str
+    leaderboard_enabled: bool
 
     model_config = {"from_attributes": True}
 
