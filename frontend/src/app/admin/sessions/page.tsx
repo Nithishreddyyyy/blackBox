@@ -8,6 +8,7 @@ import styles from "./sessions.module.css";
 interface Session {
   id: number;
   session_name: string;
+  llm_system_prompts: string | null;
   start_time: string | null;
   end_time: string | null;
   status: string;
@@ -32,16 +33,28 @@ export default function AdminSessionsPage() {
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [sessionName, setSessionName] = useState("");
+  const [newSessionPrompt, setNewSessionPrompt] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [promptEdits, setPromptEdits] = useState<Record<number, string>>({});
+  const [savingPromptId, setSavingPromptId] = useState<number | null>(null);
   const [expandedSession, setExpandedSession] = useState<number | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [loadingParticipants, setLoadingParticipants] = useState(false);
 
   const loadSessions = useCallback(() => {
     apiFetch<Session[]>("/admin/sessions")
-      .then(setSessions)
+      .then((data) => {
+        setSessions(data);
+        setPromptEdits((prev) => {
+          const next = { ...prev };
+          data.forEach((session) => {
+            next[session.id] = session.llm_system_prompts ?? "";
+          });
+          return next;
+        });
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -59,9 +72,13 @@ export default function AdminSessionsPage() {
     try {
       await apiFetch("/admin/sessions", {
         method: "POST",
-        body: JSON.stringify({ session_name: sessionName.trim() }),
+        body: JSON.stringify({
+          session_name: sessionName.trim(),
+          llm_system_prompts: newSessionPrompt,
+        }),
       });
       setSessionName("");
+      setNewSessionPrompt("");
       setShowCreate(false);
       setSuccess("Session created");
       setTimeout(() => setSuccess(""), 3000);
@@ -83,6 +100,37 @@ export default function AdminSessionsPage() {
       loadSessions();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Action failed");
+    }
+  }
+
+  async function handleSavePrompt(session: Session) {
+    const nextPrompt = promptEdits[session.id] ?? "";
+
+    setSavingPromptId(session.id);
+    setError("");
+
+    try {
+      const updated = await apiFetch<Session>(`/admin/sessions/${session.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ llm_system_prompts: nextPrompt }),
+      });
+
+      setSessions((prev) =>
+        prev.map((existing) =>
+          existing.id === session.id ? updated : existing
+        )
+      );
+      setPromptEdits((prev) => ({
+        ...prev,
+        [session.id]: updated.llm_system_prompts ?? "",
+      }));
+
+      setSuccess("Session prompt saved");
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save prompt");
+    } finally {
+      setSavingPromptId(null);
     }
   }
 
@@ -180,23 +228,36 @@ export default function AdminSessionsPage() {
 
       {showCreate && (
         <div className={`card ${styles.createForm}`}>
-          <form onSubmit={handleCreate} className={styles.createRow}>
-            <input
-              type="text"
-              className="input"
-              placeholder="Session name (e.g. Round 1)"
-              value={sessionName}
-              onChange={(e) => setSessionName(e.target.value)}
-              required
-              style={{ flex: 1 }}
+          <form onSubmit={handleCreate} className={styles.createFormBody}>
+            <div className={styles.createRow}>
+              <input
+                type="text"
+                className="input"
+                placeholder="Session name (e.g. Round 1)"
+                value={sessionName}
+                onChange={(e) => setSessionName(e.target.value)}
+                required
+                style={{ flex: 1 }}
+              />
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={creating}
+              >
+                {creating ? "Creating…" : "Create"}
+              </button>
+            </div>
+            <label htmlFor="new-session-prompt" className={styles.fieldLabel}>
+              LLM System Prompt (optional)
+            </label>
+            <textarea
+              id="new-session-prompt"
+              className={`input ${styles.promptInput}`}
+              rows={4}
+              placeholder="Set a custom system prompt for this session"
+              value={newSessionPrompt}
+              onChange={(e) => setNewSessionPrompt(e.target.value)}
             />
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={creating}
-            >
-              {creating ? "Creating…" : "Create"}
-            </button>
           </form>
         </div>
       )}
@@ -211,119 +272,166 @@ export default function AdminSessionsPage() {
         </p>
       ) : (
         <div className={styles.sessionList}>
-          {sessions.map((s) => (
-            <div key={s.id} className={`card ${styles.sessionCard}`}>
-              <div className={styles.sessionRow}>
-                <div className={styles.sessionInfo}>
-                  <div className={styles.sessionName}>{s.session_name}</div>
-                  <div className={styles.sessionMeta}>
-                    ID: {s.id}
-                    {s.start_time &&
-                      ` · Started: ${new Date(s.start_time).toLocaleTimeString()}`}
-                    {s.end_time &&
-                      ` · Ended: ${new Date(s.end_time).toLocaleTimeString()}`}
+          {sessions.map((s) => {
+            const currentPrompt = promptEdits[s.id] ?? "";
+            const storedPrompt = s.llm_system_prompts ?? "";
+            const isPromptDirty = currentPrompt !== storedPrompt;
+            const isSavingPrompt = savingPromptId === s.id;
+
+            return (
+              <div key={s.id} className={`card ${styles.sessionCard}`}>
+                <div className={styles.sessionRow}>
+                  <div className={styles.sessionInfo}>
+                    <div className={styles.sessionName}>{s.session_name}</div>
+                    <div className={styles.sessionMeta}>
+                      ID: {s.id}
+                      {s.start_time &&
+                        ` · Started: ${new Date(s.start_time).toLocaleTimeString()}`}
+                      {s.end_time &&
+                        ` · Ended: ${new Date(s.end_time).toLocaleTimeString()}`}
+                    </div>
+                  </div>
+
+                  <div className={styles.sessionActions}>
+                    <span className={`badge ${getStatusBadge(s.status)}`}>
+                      {s.status}
+                    </span>
+                    {getActions(s).map((a) => (
+                      <button
+                        key={a.action}
+                        className={`btn ${a.variant} btn-sm`}
+                        onClick={() => handleAction(s.id, a.action)}
+                      >
+                        {a.label}
+                      </button>
+                    ))}
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => toggleParticipants(s.id)}
+                    >
+                      {expandedSession === s.id ? "Hide" : "Participants"}
+                    </button>
                   </div>
                 </div>
 
-                <div className={styles.sessionActions}>
-                  <span className={`badge ${getStatusBadge(s.status)}`}>
-                    {s.status}
-                  </span>
-                  {getActions(s).map((a) => (
+                <div className={styles.promptPanel}>
+                  <label className={styles.fieldLabel} htmlFor={`prompt-${s.id}`}>
+                    LLM System Prompt
+                  </label>
+                  <textarea
+                    id={`prompt-${s.id}`}
+                    className={`input ${styles.promptInput}`}
+                    rows={4}
+                    placeholder="Set a custom system prompt for this session"
+                    value={currentPrompt}
+                    onChange={(e) =>
+                      setPromptEdits((prev) => ({
+                        ...prev,
+                        [s.id]: e.target.value,
+                      }))
+                    }
+                  />
+                  <div className={styles.promptActions}>
                     <button
-                      key={a.action}
-                      className={`btn ${a.variant} btn-sm`}
-                      onClick={() => handleAction(s.id, a.action)}
+                      className="btn btn-ghost btn-sm"
+                      onClick={() =>
+                        setPromptEdits((prev) => ({
+                          ...prev,
+                          [s.id]: storedPrompt,
+                        }))
+                      }
+                      disabled={!isPromptDirty || isSavingPrompt}
                     >
-                      {a.label}
+                      Reset
                     </button>
-                  ))}
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => toggleParticipants(s.id)}
-                  >
-                    {expandedSession === s.id ? "Hide" : "Participants"}
-                  </button>
-                </div>
-              </div>
-
-              {/* Expanded participants */}
-              {expandedSession === s.id && (
-                <div className={styles.participantsPanel}>
-                  {loadingParticipants ? (
-                    <div style={{ textAlign: "center", padding: 16 }}>
-                      <div className="spinner" />
-                    </div>
-                  ) : participants.length === 0 ? (
-                    <p
-                      style={{
-                        color: "var(--text-muted)",
-                        fontSize: 13,
-                        padding: "8px 0",
-                      }}
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => handleSavePrompt(s)}
+                      disabled={!isPromptDirty || isSavingPrompt}
                     >
-                      No participants yet
-                    </p>
-                  ) : (
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          <th>User</th>
-                          <th>Prompts</th>
-                          <th>Target</th>
-                          <th>Score</th>
-                          <th>Joined</th>
-                          <th></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {participants.map((p) => (
-                          <tr key={p.id}>
-                            <td>
-                              <strong>{p.user_name}</strong>
-                              <br />
-                              <span
-                                style={{
-                                  fontSize: 12,
-                                  color: "var(--text-muted)",
-                                }}
-                              >
-                                {p.user_email}
-                              </span>
-                            </td>
-                            <td>{p.prompt_count}</td>
-                            <td>
-                              {p.achieved_target ? (
-                                <span className="badge badge-active">Yes</span>
-                              ) : (
-                                <span className="badge badge-pending">No</span>
-                              )}
-                            </td>
-                            <td style={{ fontFamily: "var(--font-mono)" }}>
-                              {p.score}
-                            </td>
-                            <td style={{ fontSize: 13 }}>
-                              {new Date(p.joined_at).toLocaleTimeString()}
-                            </td>
-                            <td>
-                              <button
-                                className="btn btn-danger btn-sm"
-                                onClick={() =>
-                                  handleResetUser(s.id, p.user_id)
-                                }
-                              >
-                                Reset
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
+                      {isSavingPrompt ? "Saving…" : "Save Prompt"}
+                    </button>
+                  </div>
                 </div>
-              )}
-            </div>
-          ))}
+
+                {/* Expanded participants */}
+                {expandedSession === s.id && (
+                  <div className={styles.participantsPanel}>
+                    {loadingParticipants ? (
+                      <div style={{ textAlign: "center", padding: 16 }}>
+                        <div className="spinner" />
+                      </div>
+                    ) : participants.length === 0 ? (
+                      <p
+                        style={{
+                          color: "var(--text-muted)",
+                          fontSize: 13,
+                          padding: "8px 0",
+                        }}
+                      >
+                        No participants yet
+                      </p>
+                    ) : (
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th>User</th>
+                            <th>Prompts</th>
+                            <th>Target</th>
+                            <th>Score</th>
+                            <th>Joined</th>
+                            <th></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {participants.map((p) => (
+                            <tr key={p.id}>
+                              <td>
+                                <strong>{p.user_name}</strong>
+                                <br />
+                                <span
+                                  style={{
+                                    fontSize: 12,
+                                    color: "var(--text-muted)",
+                                  }}
+                                >
+                                  {p.user_email}
+                                </span>
+                              </td>
+                              <td>{p.prompt_count}</td>
+                              <td>
+                                {p.achieved_target ? (
+                                  <span className="badge badge-active">Yes</span>
+                                ) : (
+                                  <span className="badge badge-pending">No</span>
+                                )}
+                              </td>
+                              <td style={{ fontFamily: "var(--font-mono)" }}>
+                                {p.score}
+                              </td>
+                              <td style={{ fontSize: 13 }}>
+                                {new Date(p.joined_at).toLocaleTimeString()}
+                              </td>
+                              <td>
+                                <button
+                                  className="btn btn-danger btn-sm"
+                                  onClick={() =>
+                                    handleResetUser(s.id, p.user_id)
+                                  }
+                                >
+                                  Reset
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

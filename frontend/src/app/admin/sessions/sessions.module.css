@@ -2,9 +2,30 @@
   margin-bottom: 20px;
 }
 
+.createFormBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .createRow {
   display: flex;
   gap: 8px;
+}
+
+.fieldLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.promptInput {
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .sessionList {
@@ -46,6 +67,19 @@
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.promptPanel {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.promptActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .participantsPanel {
