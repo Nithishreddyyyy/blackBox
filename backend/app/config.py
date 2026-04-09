@@ -4,6 +4,12 @@ Application configuration loaded from environment variables.
 
 from pydantic_settings import BaseSettings
 from typing import Optional
+from pathlib import Path
+from pydantic import field_validator
+
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+ENV_FILE_PATH = BACKEND_DIR / ".env"
 
 
 class Settings(BaseSettings):
@@ -43,8 +49,20 @@ class Settings(BaseSettings):
     ADMIN_PASSWORD: str = "admin123"
     ADMIN_NAME: str = "Platform Admin"
 
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def normalize_database_url(cls, value: str):
+        if not isinstance(value, str):
+            return value
+
+        normalized = value.strip()
+        if normalized.startswith("mysql://"):
+            return normalized.replace("mysql://", "mysql+pymysql://", 1)
+
+        return normalized
+
     model_config = {
-        "env_file": ".env",
+        "env_file": str(ENV_FILE_PATH),
         "env_file_encoding": "utf-8",
         "extra": "ignore",
     }

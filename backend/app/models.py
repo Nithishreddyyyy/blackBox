@@ -42,6 +42,7 @@ class Session(Base):
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     session_name = Column(String(200), nullable=False)
+    llm_system_prompts = Column(Text, nullable=True)
     start_time = Column(DateTime, nullable=True)
     end_time = Column(DateTime, nullable=True)
     status = Column(

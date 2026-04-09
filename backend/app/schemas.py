@@ -67,6 +67,7 @@ class ChatHistoryResponse(BaseModel):
 
 class SessionCreate(BaseModel):
     session_name: str
+    llm_system_prompts: Optional[str] = None
 
 
 class SessionOut(BaseModel):
@@ -77,6 +78,15 @@ class SessionOut(BaseModel):
     status: str
 
     model_config = {"from_attributes": True}
+
+
+class AdminSessionOut(SessionOut):
+    llm_system_prompts: Optional[str] = None
+
+
+class SessionUpdate(BaseModel):
+    session_name: Optional[str] = None
+    llm_system_prompts: Optional[str] = None
 
 
 class SessionAction(BaseModel):
