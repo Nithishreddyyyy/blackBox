@@ -27,6 +27,29 @@
   --font-mono: "JetBrains Mono", "Fira Code", monospace;
 }
 
+/* ── Dark theme ──────────────────────────────────────── */
+[data-theme="dark"],
+html[data-theme="dark"] {
+  --bg: #1a1a1a;
+  --bg-secondary: #2d2d2d;
+  --bg-tertiary: #3a3a3a;
+  --border: #404040;
+  --text-primary: #e8e8e8;
+  --text-secondary: #b0b0b0;
+  --text-muted: #808080;
+  --accent: #5a9fd4;
+  --accent-hover: #4a8fc4;
+  --danger: #ff6b6b;
+  --danger-hover: #ff5252;
+  --success: #51cf66;
+  --warning: #ffa94d;
+  --card-bg: #242424;
+  --sidebar-bg: #2d2d2d;
+  --input-bg: #2d2d2d;
+  --input-border: #404040;
+  --input-focus: #5a9fd4;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
