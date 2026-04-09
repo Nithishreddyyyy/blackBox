@@ -6,6 +6,7 @@ import { apiFetch, getToken, getWebSocketUrl } from "@/lib/api";
 import chatStyles from "./chat.module.css";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
 
 // ── Types ────────────────────────────────────────────────
 
@@ -325,7 +326,10 @@ export default function UserChatPage() {
                     !msg.success ? chatStyles.msgError : ""
                   }`}
                 >
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    rehypePlugins={[rehypeRaw]}
+                  >
                     {msg.response_text}
                   </ReactMarkdown>
                 </div>

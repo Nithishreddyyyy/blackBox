@@ -218,3 +218,49 @@
   max-width: 320px;
   line-height: 1.5;
 }
+
+/* Markdown styles */
+.markdown h1 {
+  font-size: 1.8em;
+  font-weight: bold;
+  margin: 0.67em 0;
+}
+
+.markdown h2 {
+  font-size: 1.5em;
+  font-weight: bold;
+  margin: 0.75em 0;
+}
+
+.markdown h3 {
+  font-size: 1.17em;
+  font-weight: bold;
+  margin: 0.83em 0;
+}
+
+.markdown ul {
+  padding-left: 1.5em;
+  list-style-type: disc;
+}
+
+.markdown ol {
+  padding-left: 1.5em;
+  list-style-type: decimal;
+}
+
+.markdown li {
+  margin-bottom: 0.5em;
+}
+
+.markdown p {
+  margin: 0.5em 0;
+  line-height: 1.6;
+}
+
+.markdown strong {
+  font-weight: bold;
+}
+
+.markdown em {
+  font-style: italic;
+}
