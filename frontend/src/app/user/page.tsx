@@ -4,6 +4,8 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useRequireAuth } from "@/lib/auth";
 import { apiFetch, getToken, getWebSocketUrl } from "@/lib/api";
 import chatStyles from "./chat.module.css";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 // ── Types ────────────────────────────────────────────────
 
@@ -323,7 +325,9 @@ export default function UserChatPage() {
                     !msg.success ? chatStyles.msgError : ""
                   }`}
                 >
-                  {msg.response_text}
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {msg.response_text}
+                  </ReactMarkdown>
                 </div>
                 {msg.latency_ms != null && msg.latency_ms > 0 && (
                   <span className={chatStyles.msgMeta}>
