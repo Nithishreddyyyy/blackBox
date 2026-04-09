@@ -6,12 +6,25 @@ export const API_BASE =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export function getWebSocketUrl(path: string, token?: string | null) {
-  const url = new URL(path, API_BASE);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  if (token) {
-    url.searchParams.set("token", token);
+  let wsUrl: string;
+  
+  if (API_BASE.startsWith("http://") || API_BASE.startsWith("https://")) {
+    // Absolute URL - use new URL constructor
+    const url = new URL(path, API_BASE);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    wsUrl = url.toString();
+  } else {
+    // Relative URL - construct manually
+    const protocol = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:";
+    const host = typeof window !== "undefined" ? window.location.host : "localhost";
+    wsUrl = `${protocol}//${host}${API_BASE}${path}`;
   }
-  return url.toString();
+  
+  if (token) {
+    wsUrl += (wsUrl.includes("?") ? "&" : "?") + `token=${token}`;
+  }
+  
+  return wsUrl;
 }
 
 // ---------------------------------------------------------------------------
