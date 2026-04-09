@@ -30,8 +30,9 @@ export default function UserLeaderboardPage() {
   const [selectedSession, setSelectedSession] = useState<number | null>(null);
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loadingData, setLoadingData] = useState(true);
+  const [leaderboardEnabled, setLeaderboardEnabled] = useState<boolean | null>(null);
 
-  // Fetch active sessions
+  // Fetch active sessions and leaderboard status
   useEffect(() => {
     if (authLoading || !user) return;
 
@@ -42,6 +43,11 @@ export default function UserLeaderboardPage() {
       })
       .catch(() => {})
       .finally(() => setLoadingData(false));
+
+    // Check if leaderboard is enabled
+    apiFetch<{ leaderboard_enabled: boolean }>("/settings/leaderboard-enabled")
+      .then((data) => setLeaderboardEnabled(data.leaderboard_enabled))
+      .catch(() => setLeaderboardEnabled(true)); // Default to enabled if fetch fails
   }, [authLoading, user]);
 
   // Fetch leaderboard
@@ -87,7 +93,11 @@ export default function UserLeaderboardPage() {
         )}
       </div>
 
-      {!loadingData && sessions.length === 0 ? (
+      {leaderboardEnabled === false ? (
+        <p style={{ color: "var(--text-muted)", fontSize: 14, textAlign: "center", padding: "20px" }}>
+          The leaderboard has been disabled by the administrator.
+        </p>
+      ) : !loadingData && sessions.length === 0 ? (
         <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
           No active sessions to show a leaderboard for.
         </p>

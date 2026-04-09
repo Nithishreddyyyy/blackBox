@@ -20,6 +20,7 @@ interface AdminSettings {
   challenge_duration: number;
   llm_provider: string;
   llm_model: string;
+  leaderboard_enabled: boolean;
 }
 
 export default function AdminDashboard() {
@@ -33,6 +34,7 @@ export default function AdminDashboard() {
     challenge_duration: 3600,
     llm_provider: "ollama",
     llm_model: "llama3",
+    leaderboard_enabled: true,
   });
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsMsg, setSettingsMsg] = useState("");
@@ -62,6 +64,7 @@ export default function AdminDashboard() {
           max_messages_per_minute: s.max_messages_per_minute,
           challenge_duration: s.challenge_duration,
           llm_provider: s.llm_provider,
+          leaderboard_enabled: s.leaderboard_enabled,
           llm_model: s.llm_model,
         });
       })
@@ -236,6 +239,22 @@ export default function AdminDashboard() {
                   }
                 />
               </div>
+              <div className="form-group">
+                <label className="label" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <input
+                    type="checkbox"
+                    checked={settingsForm.leaderboard_enabled}
+                    onChange={(e) =>
+                      setSettingsForm((f) => ({
+                        ...f,
+                        leaderboard_enabled: e.target.checked,
+                      }))
+                    }
+                    style={{ width: "auto", cursor: "pointer" }}
+                  />
+                  <span>Enable Leaderboard for Users</span>
+                </label>
+              </div>
             </div>
             <div className={styles.settingsActions}>
               <button
@@ -257,6 +276,7 @@ export default function AdminDashboard() {
                       challenge_duration: settings.challenge_duration,
                       llm_provider: settings.llm_provider,
                       llm_model: settings.llm_model,
+                      leaderboard_enabled: settings.leaderboard_enabled,
                     });
                   }
                 }}
@@ -295,6 +315,12 @@ export default function AdminDashboard() {
               <span className={styles.settingsLabel}>Model</span>
               <span className={styles.settingsValue}>
                 {settings.llm_model}
+              </span>
+            </div>
+            <div className={styles.settingsItem}>
+              <span className={styles.settingsLabel}>Leaderboard</span>
+              <span className={styles.settingsValue}>
+                {settings.leaderboard_enabled ? "✓ Enabled" : "✗ Disabled"}
               </span>
             </div>
           </div>
