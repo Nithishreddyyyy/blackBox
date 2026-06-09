@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session as DBSession
 
 from app.database import get_db
-from app.models import User, Session, Notification
+from app.models import User, Session, Notification, AdminSettings
 from app.schemas import SessionOut, NotificationOut
 from app.auth import get_current_user
 
@@ -73,3 +73,19 @@ def public_leaderboard(
         entry["rank"] = i
 
     return {"session_id": session_id, "entries": entries}
+
+
+@router.get("/settings/leaderboard-enabled")
+def check_leaderboard_enabled(
+    current_user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db),
+):
+    """Check if leaderboard is enabled by admin."""
+    settings = db.query(AdminSettings).first()
+    if not settings:
+        settings = AdminSettings()
+        db.add(settings)
+        db.commit()
+        db.refresh(settings)
+    
+    return {"leaderboard_enabled": settings.leaderboard_enabled}

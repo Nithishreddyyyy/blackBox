@@ -1,0 +1,33 @@
+.wrapper {
+  padding: 24px 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.rank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.score {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+}

@@ -115,6 +115,7 @@ async def send_prompt(
 
     # Build conversation history
     history = _get_conversation_history(db, current_user.id, payload.session_id)
+    session_system_prompt = session.llm_system_prompts or settings.LLM_SYSTEM_PROMPT
 
     # Call LLM
     prompt_ts = datetime.utcnow()
@@ -123,6 +124,7 @@ async def send_prompt(
         response_text, latency_ms = await generate_response(
             prompt=payload.prompt,
             conversation_history=history,
+            system_prompt=session_system_prompt,
             provider_name=admin_settings.llm_provider,
             model=admin_settings.llm_model,
         )

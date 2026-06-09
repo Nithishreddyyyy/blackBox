@@ -42,6 +42,7 @@ class Session(Base):
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     session_name = Column(String(200), nullable=False)
+    llm_system_prompts = Column(Text, nullable=True)
     start_time = Column(DateTime, nullable=True)
     end_time = Column(DateTime, nullable=True)
     status = Column(
@@ -99,6 +100,7 @@ class AdminSettings(Base):
     challenge_duration = Column(Integer, default=3600)  # seconds
     llm_provider = Column(String(50), default="ollama")
     llm_model = Column(String(100), default="llama3")
+    leaderboard_enabled = Column(Boolean, default=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 

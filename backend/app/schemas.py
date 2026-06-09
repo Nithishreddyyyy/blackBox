@@ -67,6 +67,7 @@ class ChatHistoryResponse(BaseModel):
 
 class SessionCreate(BaseModel):
     session_name: str
+    llm_system_prompts: Optional[str] = None
 
 
 class SessionOut(BaseModel):
@@ -77,6 +78,15 @@ class SessionOut(BaseModel):
     status: str
 
     model_config = {"from_attributes": True}
+
+
+class AdminSessionOut(SessionOut):
+    llm_system_prompts: Optional[str] = None
+
+
+class SessionUpdate(BaseModel):
+    session_name: Optional[str] = None
+    llm_system_prompts: Optional[str] = None
 
 
 class SessionAction(BaseModel):
@@ -106,6 +116,7 @@ class AdminSettingsUpdate(BaseModel):
     challenge_duration: Optional[int] = None
     llm_provider: Optional[str] = None
     llm_model: Optional[str] = None
+    leaderboard_enabled: Optional[bool] = None
 
 
 class AdminSettingsOut(BaseModel):
@@ -115,6 +126,7 @@ class AdminSettingsOut(BaseModel):
     challenge_duration: int
     llm_provider: str
     llm_model: str
+    leaderboard_enabled: bool
 
     model_config = {"from_attributes": True}
 

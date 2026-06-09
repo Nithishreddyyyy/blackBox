@@ -29,7 +29,8 @@ from app.schemas import (
     LeaderboardResponse,
     LeaderboardEntry,
     SessionCreate,
-    SessionOut,
+    AdminSessionOut,
+    SessionUpdate,
     SessionAction,
     UserSessionOut,
     AuditLogOut,
@@ -51,6 +52,40 @@ def _get_admin_settings(db: DBSession) -> AdminSettings:
         db.commit()
         db.refresh(s)
     return s
+
+
+def _normalize_system_prompt(prompt: str | None) -> str | None:
+    if prompt is None:
+        return None
+    normalized = prompt.strip()
+    return normalized or None
+
+
+def _ensure_unique_system_prompt(
+    db: DBSession,
+    prompt: str | None,
+    exclude_session_id: int | None = None,
+):
+    if not prompt:
+        return
+
+    query = db.query(Session.id).filter(Session.llm_system_prompts == prompt)
+    if exclude_session_id is not None:
+        query = query.filter(Session.id != exclude_session_id)
+
+    existing = query.first()
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail="LLM system prompt must be unique across sessions",
+        )
+
+
+def _get_session_or_404(db: DBSession, session_id: int) -> Session:
+    session = db.query(Session).filter(Session.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session
 
 
 # ── Dashboard Stats ────────────────────────────────────
@@ -182,7 +217,7 @@ def update_settings(
 
 # ── Sessions ─────────────────────────────────────────────
 
-@router.get("/sessions", response_model=List[SessionOut])
+@router.get("/sessions", response_model=List[AdminSessionOut])
 def list_sessions(
     admin: User = Depends(require_admin),
     db: DBSession = Depends(get_db),
@@ -190,25 +225,78 @@ def list_sessions(
     return db.query(Session).order_by(Session.id.desc()).all()
 
 
-@router.post("/sessions", response_model=SessionOut, status_code=201)
+@router.post("/sessions", response_model=AdminSessionOut, status_code=201)
 def create_session(
     payload: SessionCreate,
     admin: User = Depends(require_admin),
     db: DBSession = Depends(get_db),
 ):
-    session = Session(session_name=payload.session_name)
+    session_name = payload.session_name.strip()
+    if not session_name:
+        raise HTTPException(status_code=400, detail="Session name cannot be empty")
+
+    session_prompt = _normalize_system_prompt(payload.llm_system_prompts)
+    _ensure_unique_system_prompt(db, session_prompt)
+
+    session = Session(
+        session_name=session_name,
+        llm_system_prompts=session_prompt,
+    )
     db.add(session)
     db.add(AuditLog(
         actor_id=admin.id,
         action_type="create_session",
-        action_data={"session_name": payload.session_name},
+        action_data={
+            "session_name": session_name,
+            "has_llm_system_prompt": bool(session_prompt),
+        },
     ))
     db.commit()
     db.refresh(session)
     return session
 
 
-@router.post("/sessions/{session_id}/action", response_model=SessionOut)
+@router.put("/sessions/{session_id}", response_model=AdminSessionOut)
+def update_session(
+    session_id: int,
+    payload: SessionUpdate,
+    admin: User = Depends(require_admin),
+    db: DBSession = Depends(get_db),
+):
+    session = _get_session_or_404(db, session_id)
+
+    update_data = payload.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No update fields provided")
+
+    audit_data = {"session_id": session_id}
+
+    if "session_name" in update_data:
+        session_name = (update_data["session_name"] or "").strip()
+        if not session_name:
+            raise HTTPException(status_code=400, detail="Session name cannot be empty")
+        session.session_name = session_name
+        audit_data["session_name"] = session_name
+
+    if "llm_system_prompts" in update_data:
+        session_prompt = _normalize_system_prompt(update_data["llm_system_prompts"])
+        _ensure_unique_system_prompt(db, session_prompt, exclude_session_id=session_id)
+        session.llm_system_prompts = session_prompt
+        audit_data["llm_system_prompt_updated"] = True
+        audit_data["has_llm_system_prompt"] = bool(session_prompt)
+
+    db.add(AuditLog(
+        actor_id=admin.id,
+        action_type="update_session",
+        action_data=audit_data,
+    ))
+    db.commit()
+    db.refresh(session)
+
+    return session
+
+
+@router.post("/sessions/{session_id}/action", response_model=AdminSessionOut)
 async def session_action(
     session_id: int,
     payload: SessionAction,
@@ -216,9 +304,7 @@ async def session_action(
     db: DBSession = Depends(get_db),
 ):
     """Start, pause, resume, or end a session."""
-    session = db.query(Session).filter(Session.id == session_id).first()
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    session = _get_session_or_404(db, session_id)
 
     action = payload.action.lower()
     valid_transitions = {

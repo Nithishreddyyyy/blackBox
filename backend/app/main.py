@@ -6,6 +6,7 @@ FastAPI application entry point.
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.database import engine, Base, SessionLocal
 from app.models import User, AdminSettings
@@ -17,6 +18,72 @@ from app.routes.chat import router as chat_router
 from app.routes.admin import router as admin_router
 from app.routes.public import router as public_router
 from app.routes.websocket import router as ws_router
+
+
+def ensure_schema_compatibility():
+    """Apply safe, non-destructive schema compatibility patches."""
+    if not settings.DATABASE_URL.startswith("mysql"):
+        return
+
+    with engine.begin() as conn:
+        has_plural = conn.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'sessions'
+                  AND column_name = 'llm_system_prompts'
+                """
+            )
+        ).scalar() or 0
+
+        has_singular = conn.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'sessions'
+                  AND column_name = 'llm_system_prompt'
+                """
+            )
+        ).scalar() or 0
+
+        if has_plural == 0:
+            conn.execute(text("ALTER TABLE sessions ADD COLUMN llm_system_prompts TEXT NULL"))
+            print("[MIGRATION] Added sessions.llm_system_prompts")
+
+        if has_singular > 0:
+            conn.execute(
+                text(
+                    """
+                    UPDATE sessions
+                    SET llm_system_prompts = llm_system_prompt
+                    WHERE (llm_system_prompts IS NULL OR llm_system_prompts = '')
+                      AND llm_system_prompt IS NOT NULL
+                      AND llm_system_prompt <> ''
+                    """
+                )
+            )
+            print("[MIGRATION] Backfilled llm_system_prompts from llm_system_prompt")
+
+        # Add leaderboard_enabled column if it doesn't exist
+        has_leaderboard_enabled = conn.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'admin_settings'
+                  AND column_name = 'leaderboard_enabled'
+                """
+            )
+        ).scalar() or 0
+
+        if has_leaderboard_enabled == 0:
+            conn.execute(text("ALTER TABLE admin_settings ADD COLUMN leaderboard_enabled BOOLEAN DEFAULT TRUE"))
+            print("[MIGRATION] Added admin_settings.leaderboard_enabled")
 
 
 def seed_database():
@@ -66,6 +133,10 @@ async def lifespan(app: FastAPI):
     # Create all tables
     Base.metadata.create_all(bind=engine)
     print("[STARTUP] Database tables created")
+
+    # Ensure schema compatibility for evolved columns
+    ensure_schema_compatibility()
+    print("[STARTUP] Schema compatibility checks complete")
 
     # Seed default data
     seed_database()
